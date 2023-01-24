@@ -18,11 +18,22 @@
 # Write your own HTTP GET and POST
 # The point is to understand what you have to send and get experience with it
 
+"""
+Things to remember/do/check
+- Add the host header
+- Add the content-length header
+- Figure out if I'm allowed to use urllib the way I did, or if I have to get host header myself?
+- Idk if I like the way I passed a dictionary into HTTPClient.get_headers()
+"""
+
+
 import sys
 import socket
 import re
 # you may use urllib to encode data appropriately
 import urllib.parse
+
+ALLOWED_CONTENT_TYPES = ['application/x-www-form-encoded']
 
 def help():
     print("httpclient.py [GET/POST] [URL]\n")
@@ -33,18 +44,40 @@ class HTTPResponse(object):
         self.body = body
 
 class HTTPClient(object):
+
     #def get_host_port(self,url):
 
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
+        print("Connected!")
         return None
 
     def get_code(self, data):
         return None
 
-    def get_headers(self,data):
-        return None
+    def get_headers(self, data):
+        headers = ''
+        if data['host']:
+            headers += self.get_host_header(data['host'])
+        
+        return headers
+
+    def get_host_header(self, host):
+        return self.get_header("Host", host)
+
+    def get_content_type_header(self, content_type):
+        if content_type not in ALLOWED_CONTENT_TYPES:
+            raise ValueError(f"Content type {content_type} not allowed! Allowed are {', '.join(ALLOWED_CONTENT_TYPES)}")
+        return self.get_header("Content-Type", content_type)
+
+    def get_content_length_header(self, content_length):
+        if not isinstance(content_length, int):
+            raise TypeError("Content-Length should be an int!")
+        return self.get_header("Content-Length", content_length)
+
+    def get_header(self, key, value):
+        return f"{key}: {value}\r\n"
 
     def get_body(self, data):
         return None
@@ -68,12 +101,30 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        code = 500
+
+        # Use urllib to parse a standard URL
+        parsed_url = urllib.parse.urlparse(url)
+        print(parsed_url)
+
+        # Extract our headers
+        headers = self.get_headers({'host': parsed_url.hostname})
+        print(headers)
+
+        # Make a connection
+        self.connect(parsed_url.hostname, parsed_url.port)
+
+        # Make a GET request to the indicated path
+        self.sendall(f"GET {parsed_url.path} HTTP/1.1\r\n{headers}\r\n")
+
+        # Get all data
+        print(self.recvall(self.socket))
+
+        code = 404
         body = ""
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        code = 500
+        code = 404
         body = ""
         return HTTPResponse(code, body)
 
