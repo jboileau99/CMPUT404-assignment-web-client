@@ -20,10 +20,8 @@
 
 """
 Things to remember/do/check
-- Add the host header
-- Add the content-length header
+- Check what the virtualhosting part means, I think the point is just to include the host header?
 - Figure out if I'm allowed to use urllib the way I did, or if I have to get host header myself?
-- Idk if I like the way I passed a dictionary into HTTPClient.get_headers()
 """
 
 
@@ -43,6 +41,9 @@ class HTTPResponse(object):
         self.code = code
         self.body = body
 
+    def __str__(self):
+        return f"Response (Code = {self.code}):\n{self.body}"
+
 class HTTPClient(object):
 
     #def get_host_port(self,url):
@@ -50,37 +51,28 @@ class HTTPClient(object):
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
-        print("Connected!")
         return None
 
-    def get_code(self, data):
-        return None
+    # Get all HTTP headers for a given method, host, and optional request_body
+    def get_request_headers(self, method, host, request_body=''):
 
-    def get_headers(self, data):
-        headers = ''
-        if data['host']:
-            headers += self.get_host_header(data['host'])
+        # Default headers
+        headers = self.get_header_str('User-Agent', 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:47.0) Gecko/20100101 Firefox/47.0') + \
+            self.get_header_str('Accept', '*/*') + \
+            self.get_header_str('Connection', 'close') + \
+            self.get_header_str('Host', host)
+
+        # Add content headers for post request
+        if method.lower() == 'post':
+            headers += self.get_header_str("Content-Length", len(request_body))
+            if request_body is not None:
+                headers += self.get_header_str('Content-type', 'application/x-www-form-urlencoded')
         
         return headers
 
-    def get_host_header(self, host):
-        return self.get_header("Host", host)
-
-    def get_content_type_header(self, content_type):
-        if content_type not in ALLOWED_CONTENT_TYPES:
-            raise ValueError(f"Content type {content_type} not allowed! Allowed are {', '.join(ALLOWED_CONTENT_TYPES)}")
-        return self.get_header("Content-Type", content_type)
-
-    def get_content_length_header(self, content_length):
-        if not isinstance(content_length, int):
-            raise TypeError("Content-Length should be an int!")
-        return self.get_header("Content-Length", content_length)
-
-    def get_header(self, key, value):
+    # Get a single HTTP header string for a key-value pair
+    def get_header_str(self, key, value):
         return f"{key}: {value}\r\n"
-
-    def get_body(self, data):
-        return None
     
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
@@ -100,33 +92,71 @@ class HTTPClient(object):
                 done = not part
         return buffer.decode('utf-8')
 
+    # Parse status code, headers, and body from HTTP response
+    def parse_response(self, response):
+
+        parts = response.split('\r\n\r\n')
+
+        # Extract status line and headers
+        status_headers = parts[0].split('\r\n')
+        status = status_headers[0].strip()
+        code = int(status.split()[1])
+        headers = status_headers[1:]
+
+        # Extract body if it's there
+        if len(parts) == 2:
+            body = parts[1].strip()
+
+        return code, headers, body or None
+
     def GET(self, url, args=None):
 
         # Use urllib to parse a standard URL
         parsed_url = urllib.parse.urlparse(url)
-        print(parsed_url)
 
-        # Extract our headers
-        headers = self.get_headers({'host': parsed_url.hostname})
-        print(headers)
+        # Set headers
+        headers = self.get_request_headers('GET', parsed_url.hostname)
 
         # Make a connection
-        self.connect(parsed_url.hostname, parsed_url.port)
+        self.connect(parsed_url.hostname, parsed_url.port or 80)  # TODO: Using 80 by default here, is this correct?
 
         # Make a GET request to the indicated path
-        self.sendall(f"GET {parsed_url.path} HTTP/1.1\r\n{headers}\r\n")
+        req_string = f"GET {parsed_url.path or '/'} HTTP/1.1\r\n{headers}\r\n"
+        self.sendall(req_string)
 
-        # Get all data
-        print(self.recvall(self.socket))
+        # Get and parse response
+        response = self.recvall(self.socket)
+        code, headers, body = self.parse_response(response)
 
-        code = 404
-        body = ""
+        # Close socket
+        self.close()
+
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        code = 404
-        body = ""
-        return HTTPResponse(code, body)
+        
+        # Use urllib to parse a standard URL
+        parsed_url = urllib.parse.urlparse(url)
+
+        # Set headers and post body
+        request_body = urllib.parse.urlencode(args) if args else ''
+        request_headers = self.get_request_headers('POST', parsed_url.hostname, request_body=request_body)
+
+        # Make a connection
+        self.connect(parsed_url.hostname, parsed_url.port or 80)  # TODO: Using 80 by default here, is this correct?
+
+        # Make a POST request to the indicated path
+        req_string = f"POST {parsed_url.path or '/'} HTTP/1.1\r\n{request_headers}\r\n{request_body}"
+        self.sendall(req_string)
+
+        # Get and parse response
+        response = self.recvall(self.socket)
+        response_code, response_headers, response_body = self.parse_response(response)
+
+        # Close socket
+        self.close()
+
+        return HTTPResponse(response_code, response_body)
 
     def command(self, url, command="GET", args=None):
         if (command == "POST"):
