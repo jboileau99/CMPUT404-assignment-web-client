@@ -115,23 +115,24 @@ class HTTPClient(object):
         parsed_url = urllib.parse.urlparse(url)
 
         # Set headers
-        headers = self.get_request_headers('GET', parsed_url.hostname)
+        query_params = f"{parsed_url.query if parsed_url.query else ''}{'&' if parsed_url.query and args else ''}{urllib.parse.urlencode(args) if args else ''}"
+        request_headers = self.get_request_headers('GET', parsed_url.hostname)
 
         # Make a connection
         self.connect(parsed_url.hostname, parsed_url.port or 80)  # TODO: Using 80 by default here, is this correct?
 
         # Make a GET request to the indicated path
-        req_string = f"GET {parsed_url.path or '/'} HTTP/1.1\r\n{headers}\r\n"
+        req_string = f"GET {parsed_url.path or '/'}{f'?{query_params}' if query_params else ''} HTTP/1.1\r\n{request_headers}\r\n"
         self.sendall(req_string)
 
         # Get and parse response
         response = self.recvall(self.socket)
-        code, headers, body = self.parse_response(response)
+        response_code, response_headers, response_body = self.parse_response(response)
 
         # Close socket
         self.close()
 
-        return HTTPResponse(code, body)
+        return HTTPResponse(response_code, response_body)
 
     def POST(self, url, args=None):
         
