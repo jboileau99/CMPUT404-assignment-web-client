@@ -140,7 +140,7 @@ class HTTPClient(object):
         parsed_url = urllib.parse.urlparse(url)
 
         # Set headers and post body
-        request_body = urllib.parse.urlencode(args) if args else ''
+        request_body = f"{parsed_url.query if parsed_url.query else ''}{'&' if parsed_url.query and args else ''}{urllib.parse.urlencode(args) if args else ''}"
         request_headers = self.get_request_headers('POST', parsed_url.hostname, request_body=request_body)
 
         # Make a connection
